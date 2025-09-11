@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from "vue";
 import { supabase } from "../lib/supabase";
+import Artikelliste from "../components/Artikelliste.vue";
 
 const artikel = ref([]);
 const selected = ref([]);
@@ -31,14 +32,14 @@ onMounted(fetchArtikel);
 </script>
 
 <template>
-  <div class="page">
-    <h1>Artikelverwaltung</h1>
+  <div class="artikel-liste">
+    <h2>Artikelverwaltung</h2>
     <div v-if="loading">⏳ Lade Artikel...</div>
-
+    
     <table v-else>
       <thead>
         <tr>
-          <th><input type="checkbox" /></th>
+          <th></th>
           <th>ID</th>
           <th>CodeNr</th>
           <th>Name</th>
@@ -47,14 +48,9 @@ onMounted(fetchArtikel);
         </tr>
       </thead>
       <tbody>
-        <tr v-for="item in artikel" :key="item.id">
+        <tr v-for="item in artikel" :key="item.id" @click="openEditModal(item)">
           <td>
-            <input
-              type="checkbox"
-              :value="item.id"
-              @change="toggleSelect(item.id)"
-              :checked="selected.includes(item.id)"
-            />
+            <input type="checkbox" :value="item.id" />
           </td>
           <td>{{ item.id }}</td>
           <td>{{ item.codenr }}</td>
@@ -64,8 +60,17 @@ onMounted(fetchArtikel);
         </tr>
       </tbody>
     </table>
+
+    <!-- Modal zum Bearbeiten -->
+    <EditArtikelModal
+      v-if="selectedArtikel"
+      :artikel="selectedArtikel"
+      @close="closeEditModal"
+      @saved="reloadAfterSave"
+    />
   </div>
 </template>
+
 
 <style scoped>
 .page {
