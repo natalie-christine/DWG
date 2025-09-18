@@ -29,7 +29,8 @@ function onFileChange(event) {
 
 // Modal schließen
 function closeModal() {
-  const changed = JSON.stringify(localArtikel) !== JSON.stringify(originalArtikel);
+  const changed =
+    JSON.stringify(localArtikel) !== JSON.stringify(originalArtikel);
   if (changed) {
     Swal.fire({
       title: "Ungespeicherte Änderungen",
@@ -38,7 +39,7 @@ function closeModal() {
       showCancelButton: true,
       confirmButtonText: "Ja, schließen",
       cancelButtonText: "Abbrechen"
-    }).then(result => {
+    }).then((result) => {
       if (result.isConfirmed) emit("close");
     });
   } else {
@@ -51,25 +52,25 @@ async function saveChanges() {
   try {
     let imageUrl = localArtikel.image_url;
 
+    // Falls Datei ausgewählt wurde → in Supabase Storage hochladen
     if (selectedFile.value) {
-      // Datei sicher benennen
-      const safeFileName = `picture/${localArtikel.id}_${Date.now()}_${encodeURIComponent(selectedFile.value.name)}`;
+      const safeFileName = `picture/${localArtikel.id}_${Date.now()}`;
 
-      // Upload in Supabase
-      const { data, error: uploadError } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from("artikel-bilder")
-        .upload(safeFileName, selectedFile.value, { upsert: true });
+        .upload(safeFileName, selectedFile.value, {
+          cacheControl: "3600",
+          upsert: true
+        });
 
       if (uploadError) throw uploadError;
 
-      // Public URL generieren
-      const { publicUrl, error: urlError } = supabase.storage
+      // Public URL holen
+      const { data: publicData } = supabase.storage
         .from("artikel-bilder")
         .getPublicUrl(safeFileName);
 
-      if (urlError) throw urlError;
-
-      imageUrl = publicUrl;
+      imageUrl = publicData.publicUrl;
     }
 
     // Artikel in DB aktualisieren
@@ -88,11 +89,9 @@ async function saveChanges() {
 
     if (dbError) throw dbError;
 
-    // Event auslösen
     emit("save", { ...localArtikel, image_url: imageUrl });
     emit("close");
 
-    // Erfolgsmeldung
     await Swal.fire({
       title: "Gespeichert",
       text: "Die Änderungen wurden erfolgreich gespeichert.",
@@ -100,7 +99,6 @@ async function saveChanges() {
       timer: 1500,
       showConfirmButton: false
     });
-
   } catch (err) {
     Swal.fire("Fehler", err.message, "error");
   }
