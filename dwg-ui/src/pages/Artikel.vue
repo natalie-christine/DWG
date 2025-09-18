@@ -11,7 +11,7 @@ import Artikelliste from "../components/Artikelliste.vue";
   </div>
 </template>
 
->>>>>>> feac1ee (load article, search article, filter kategory)
+
 <style scoped>
 .page {
   padding-left: 250px;

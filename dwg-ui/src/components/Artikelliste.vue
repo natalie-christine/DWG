@@ -1,8 +1,9 @@
 <script setup>
 import { ref, onMounted, watch } from "vue";
 import { supabase } from "../lib/supabase";
-
 import EditArtikelModal from "./EditArtikelModal.vue";
+
+const artikelliste = ref([]);
 
 const artikel = ref([]);
 const loading = ref(false);
@@ -19,73 +20,88 @@ const totalItems = ref(0);
 const showEditModal = ref(false);
 const selectedArtikel = ref(null);
 
-const artikelListe = ref([])
-const totalArtikel = ref(0)
-
 const fetchCategories = async () => {
-  let { data, error } = await supabase.from("artikel").select("category");
+  const { data, error } = await supabase.from("artikel").select("category");
   if (!error && data) {
     categories.value = ["Alle", ...new Set(data.map((a) => a.category))];
   }
 };
 
-const fetchArtikel = async () => {
+async function fetchArtikel() {
   loading.value = true;
   errorMessage.value = "";
 
-  let query = supabase
-    .from("artikel")
-    .select("*", { count: "exact" })
-    .order("id", { ascending: true })
-    .range((currentPage.value - 1) * pageSize, currentPage.value * pageSize - 1);
+  try {
+    let query = supabase
+      .from("artikel")
+      .select("*")
+      .order("id", { ascending: true });
 
-  if (searchQuery.value) {
-    query = query.or(
-      `name.ilike.%${searchQuery.value}%,codenr.ilike.%${searchQuery.value}%`
-    );
+    if (selectedCategory.value !== "Alle") {
+      query = query.eq("category", selectedCategory.value);
+    }
+
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+
+    // Suche auf der Client-Seite
+    if (searchQuery.value) {
+      const term = searchQuery.value.toLowerCase();
+      artikel.value = data.filter(
+        a =>
+          a.name?.toLowerCase().includes(term) ||
+          a.codenr?.toLowerCase().includes(term)
+      );
+    } else {
+      artikel.value = data;
+    }
+
+    artikelliste.value = data; // volle Liste für Bearbeitung etc.
+    totalItems.value = artikel.value.length;
+
+  } catch (err) {
+    errorMessage.value = err.message;
+    artikel.value = [];
+    artikelliste.value = [];
+  } finally {
+    loading.value = false;
   }
-
-  if (selectedCategory.value !== "Alle") {
-    query = query.eq("category", selectedCategory.value);
-  }
-
-  const { data, error, count } = await query;
-
-  if (error) {
-    errorMessage.value = error.message;
-  } else {
-    artikel.value = data;
-    totalItems.value = count || 0;
-  }
-
-  loading.value = false;
 };
+
+// Modal öffnen
+function openEditModal(artikel) {
+  selectedArtikel.value = { ...artikel }; // Kopie für Bearbeitung
+  showEditModal.value = true;
+}
+
+// Modal schließen
+function closeEditModal() {
+  showEditModal.value = false;
+  selectedArtikel.value = null;
+}
+
+// Artikel nach Bearbeitung aktualisieren
+function saveArtikel(updatedArtikel) {
+  const index = artikelliste.value.findIndex(a => a.id === updatedArtikel.id);
+  if (index !== -1) {
+    artikelliste.value[index] = { ...updatedArtikel };
+  }
+  closeEditModal();
+}
 
 const totalPages = () => Math.ceil(totalItems.value / pageSize);
 
-const openEditModal = (item) => {
-  selectedArtikel.value = item;
-  showEditModal.value = true;
-};
-
-const closeEditModal = () => {
-  showEditModal.value = false;
-  selectedArtikel.value = null;
-  fetchArtikel();
-};
-
-onMounted(() => {
-  fetchCategories();
-  fetchArtikel();
-});
 
 watch([searchQuery, selectedCategory, currentPage], () => {
   fetchArtikel();
 });
 
-
-
+onMounted(() => {
+  fetchCategories();
+  fetchArtikel();
+});
 </script>
+
 
 <template>
   <div class="p-4">
@@ -149,11 +165,7 @@ watch([searchQuery, selectedCategory, currentPage], () => {
             <td class="p-2 border">{{ art.unit }}</td>
             <td class="p-2 border">{{ art.category }}</td>
             <td class="p-2 border">
-              <button
-                class="px-2 py-1 bg-blue-500 text-white rounded"
-                @click="openEditModal(art)">
-                Bearbeiten
-              </button>
+              <button @click="openEditModal(artikel)">Bearbeiten</button>
             </td>
           </tr>
         </tbody>
@@ -191,7 +203,7 @@ watch([searchQuery, selectedCategory, currentPage], () => {
       v-if="showEditModal"
       :artikel="selectedArtikel"
       @close="closeEditModal"
-      @saved="fetchArtikel"
+      @save="saveArtikel"
     />
   </div>
 </template>
