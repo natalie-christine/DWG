@@ -14,19 +14,8 @@ import Artikelliste from "../components/Artikelliste.vue";
 
 <style scoped>
 .page {
+  background-color: rgba(58, 102, 102, 0.342);
   padding-left: 50px;
   padding-top: 20px;
-}
-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 15px;
-}
-th, td {
-  border: 1px solid #ddd;
-  padding: 8px;
-}
-th {
-  background-color: #f4f4f4;
 }
 </style>

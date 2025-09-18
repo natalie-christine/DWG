@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, ref, watch } from "vue";
+import { reactive, ref, watch, onMounted } from "vue";
 import { supabase } from "../lib/supabase";
 import Swal from "sweetalert2";
 
@@ -10,19 +10,21 @@ const props = defineProps({
 const emit = defineEmits(["close", "save"]);
 
 // Lokale Kopie für Bearbeitung
-const localArtikel = reactive({ ...props.artikel, image_url: props.artikel.image_url || null });
+const localArtikel = reactive({ ...props.artikel });
 let originalArtikel = { ...props.artikel };
 
+// Watch auf Props
+watch(() => props.artikel, (newVal) => {
+  Object.assign(localArtikel, newVal);
+  originalArtikel = { ...newVal };
+}, { deep: true });
+
+// Datei für Upload
+const selectedFile = ref(null);
 
 // Datei auswählen
-const selectedFile = ref(null);
-const imagePreview = ref(localArtikel.image_url || null);
-
 function onFileChange(event) {
-  const file = event.target.files[0];
-  if (file) {
-    selectedFile.value = event.target.files[0];
-  }
+  selectedFile.value = event.target.files[0];
 }
 
 // Modal schließen
@@ -44,28 +46,23 @@ function closeModal() {
   }
 }
 
-
 // Änderungen speichern
 async function saveChanges() {
   try {
     let imageUrl = localArtikel.image_url;
 
-    // Upload nur, wenn eine Datei ausgewählt wurde
     if (selectedFile.value) {
-      // Dateiname sicher machen
-      const safeFileName = `picture/${localArtikel.id}_${Date.now()}_${selectedFile.value.name.replace(/[^a-zA-Z0-9_.-]/g, "_")}`;
+      // Datei sicher benennen
+      const safeFileName = `picture/${localArtikel.id}_${Date.now()}_${encodeURIComponent(selectedFile.value.name)}`;
 
-      // Upload in Supabase Storage
+      // Upload in Supabase
       const { data, error: uploadError } = await supabase.storage
         .from("artikel-bilder")
-        .upload(safeFileName, selectedFile.value, {
-          upsert: true,
-          contentType: selectedFile.value.type
-        });
+        .upload(safeFileName, selectedFile.value, { upsert: true });
 
       if (uploadError) throw uploadError;
 
-      // Public URL erzeugen
+      // Public URL generieren
       const { publicUrl, error: urlError } = supabase.storage
         .from("artikel-bilder")
         .getPublicUrl(safeFileName);
@@ -75,14 +72,14 @@ async function saveChanges() {
       imageUrl = publicUrl;
     }
 
-       // Artikel in der DB aktualisieren
-       const { error: dbError } = await supabase
+    // Artikel in DB aktualisieren
+    const { error: dbError } = await supabase
       .from("artikel")
       .update({
         name: localArtikel.name,
-        codenr: localArtikel.codenr,
-        salesprice: localArtikel.salesprice,
-        stocktot: localArtikel.stocktot,
+        code_nr: localArtikel.code_nr,
+        sales_price: localArtikel.sales_price,
+        stock_tot: localArtikel.stock_tot,
         unit: localArtikel.unit,
         category: localArtikel.category,
         image_url: imageUrl
@@ -91,10 +88,11 @@ async function saveChanges() {
 
     if (dbError) throw dbError;
 
-    // Event zum Schließen und Update auslösen
+    // Event auslösen
     emit("save", { ...localArtikel, image_url: imageUrl });
     emit("close");
 
+    // Erfolgsmeldung
     await Swal.fire({
       title: "Gespeichert",
       text: "Die Änderungen wurden erfolgreich gespeichert.",
@@ -116,10 +114,13 @@ async function saveChanges() {
 
       <form @submit.prevent="saveChanges">
         <label>ID:</label>
-        <input type="text" :value="localArtikel.id" disabled />
+        <input type="text" v-model="localArtikel.id" disabled />
 
-        <label>Artikel Name:</label>
+        <label>Name:</label>
         <input type="text" v-model="localArtikel.name" required />
+
+        <label>Code-Nr:</label>
+        <input type="text" v-model="localArtikel.code_nr"  />
 
         <label>Preis:</label>
         <input type="number" v-model="localArtikel.sales_price" required step="0.01" />
@@ -135,10 +136,6 @@ async function saveChanges() {
 
         <label>Bild hochladen:</label>
         <input type="file" @change="onFileChange" accept="image/*" />
-
-        <div v-if="imagePreview" class="image-preview">
-          <img :src="imagePreview" alt="Vorschau" />
-        </div>
 
         <div class="buttons">
           <button type="submit">Speichern</button>
@@ -168,6 +165,4 @@ input { width:100%; padding:6px 8px; margin-top:4px; border-radius:4px; border:1
 button { margin-left:10px; padding:6px 12px; border:none; border-radius:4px; cursor:pointer; }
 button[type="submit"] { background-color:#4CAF50; color:white; }
 button[type="button"] { background-color:#f44336; color:white; }
-.image-preview { margin-top:10px; }
-.image-preview img { max-width: 100%; border-radius:4px; border:1px solid #ccc; }
 </style>

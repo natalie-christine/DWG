@@ -21,6 +21,7 @@ const tabs = [
   { name: "Inventur", path: "/inventur" },
   { name: "Angebote", path: "/angebote" },
   { name: "Bestellungen", path: "/bestellungen" },
+  { name: "Einstellungen", path: "/einstellungen"}
 ];
 
 const isActive = (path) => route.path === path;
@@ -32,23 +33,22 @@ const isActive = (path) => route.path === path;
 
     display: flex;
     gap: 1rem;
-    color: aliceblue;
     height: 200px;
     margin-bottom: 50px;
 
   }
 
   a{
-   background-color: rgba(62, 106, 121, 0.482);
     border: 10px;
-    padding: 50px;
+    padding: 20px;
+    color: darkslategrey;
+    text-decoration: none;
+    
   }
 
   nav{   
-    width: fit-content;
     border: 100px;
     font-size: 30px;
-    font-style: normal;
 
   }
 

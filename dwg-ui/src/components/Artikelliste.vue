@@ -19,7 +19,7 @@ const totalItems = ref(0);
 const showEditModal = ref(false);
 const selectedArtikel = ref(null);
 
-// Für Hover- und Klick-Vorschau
+// Hover & Klick
 const hoverImage = ref(null);
 const clickedImage = ref(null);
 
@@ -46,7 +46,6 @@ async function fetchArtikel() {
     const { data, error } = await query;
     if (error) throw new Error(error.message);
 
-    // Client-Suche
     if (searchQuery.value) {
       const term = searchQuery.value.toLowerCase();
       artikel.value = data.filter(
@@ -95,7 +94,6 @@ function getImageUrl(path) {
 
 const totalPages = () => Math.ceil(totalItems.value / pageSize);
 
-// Watch für Filter und Suche
 watch([searchQuery, selectedCategory, currentPage], () => {
   fetchArtikel();
 });
@@ -112,22 +110,11 @@ onMounted(() => {
 
     <!-- Filter & Suche -->
     <div class="flex gap-4 mb-4">
-      <input
-        v-model="searchQuery"
-        type="text"
-        placeholder="Suche nach Name oder CodeNr..."
-        class="border p-2 rounded w-1/3"
-        style="height: 50px; width: 350px; padding-left: 10px; font-size: 20px;"
-      />
-
-      <select
-        v-model="selectedCategory"
-        class="border p-2 rounded"
-        style="height: 50px; width: 350px; padding-left: 10px;"
-      >
-        <option v-for="cat in categories" :key="cat" :value="cat">
-          {{ cat }}
-        </option>
+      <input v-model="searchQuery" type="text" placeholder="Suche nach Name oder CodeNr..."
+             class="border p-2 rounded w-1/3" style="height: 50px; width: 350px; padding-left: 10px; font-size: 20px;" />
+      <select v-model="selectedCategory"
+              class="border p-2 rounded" style="height: 50px; width: 350px; padding-left: 10px;">
+        <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
       </select>
     </div>
 
@@ -143,17 +130,13 @@ onMounted(() => {
             <th class="p-2 border">CodeNr</th>
             <th class="p-2 border">Preis</th>
             <th class="p-2 border">Lagerstand</th>
-            <th class="p-2 border">Mengeneinheit</th>
+            <th class="p-2 border">Einheit</th>
             <th class="p-2 border">Kategorie</th>
             <th class="p-2 border">Aktionen</th>
           </tr>
         </thead>
         <tbody>
-          <tr
-            v-for="art in artikel"
-            :key="art.id"
-            class="hover:bg-gray-50 cursor-pointer relative"
-          >
+          <tr v-for="art in artikel" :key="art.id" class="hover:bg-gray-50 cursor-pointer relative">
             <td class="p-2 border">{{ art.id }}</td>
 
             <!-- Bildspalte mit Hover- und Klick-Vorschau -->
@@ -168,22 +151,18 @@ onMounted(() => {
                 🖼️
               </span>
 
-              <div
-                v-if="hoverImage === getImageUrl(art.image_url) || clickedImage === getImageUrl(art.image_url)"
-                class="absolute z-50 mt-2 left-1/2 transform -translate-x-1/2 bg-white p-1 border shadow-lg rounded"
-                style="max-width: 200px; max-height: 200px;"
-              >
-                <img
-                  :src="getImageUrl(art.image_url)"
-                  class="object-contain w-full h-full rounded"
-                />
+              <!-- Hover & Klick Vorschau -->
+              <div v-if="hoverImage === getImageUrl(art.image_url) || clickedImage === getImageUrl(art.image_url)"
+                   class="absolute z-50 mt-2 left-1/2 transform -translate-x-1/2 bg-white p-1 border shadow-lg rounded"
+                   style="max-width: 250px; max-height: 250px;">
+                <img :src="getImageUrl(art.image_url)" class="object-contain w-full h-full rounded" />
               </div>
             </td>
 
             <td class="p-2 border">{{ art.name }}</td>
-            <td class="p-2 border">{{ art.codenr }}</td>
-            <td class="p-2 border">{{ art.salesprice }} €</td>
-            <td class="p-2 border">{{ art.stocktot }}</td>
+            <td class="p-2 border">{{ art.code_nr }}</td>
+            <td class="p-2 border">{{ art.sales_price }} €</td>
+            <td class="p-2 border">{{ art.stock_tot }}</td>
             <td class="p-2 border">{{ art.unit }}</td>
             <td class="p-2 border">{{ art.category }}</td>
             <td class="p-2 border">
@@ -195,30 +174,14 @@ onMounted(() => {
 
       <!-- Pagination -->
       <div class="flex justify-between items-center mt-4">
-        <button
-          :disabled="currentPage === 1"
-          @click="currentPage--"
-          class="px-3 py-1 border rounded disabled:opacity-50"
-        >
-          Zurück
-        </button>
-
+        <button :disabled="currentPage === 1" @click="currentPage--" class="px-3 py-1 border rounded disabled:opacity-50">Zurück</button>
         <span>Seite {{ currentPage }} von {{ totalPages() }}</span>
-
-        <button
-          :disabled="currentPage === totalPages()"
-          @click="currentPage++"
-          class="px-3 py-1 border rounded disabled:opacity-50"
-        >
-          Weiter
-        </button>
+        <button :disabled="currentPage === totalPages()" @click="currentPage++" class="px-3 py-1 border rounded disabled:opacity-50">Weiter</button>
       </div>
     </div>
 
     <!-- Fehler -->
-    <div v-if="errorMessage" class="text-red-500 mt-2">
-      {{ errorMessage }}
-    </div>
+    <div v-if="errorMessage" class="text-red-500 mt-2">{{ errorMessage }}</div>
 
     <!-- Edit Modal -->
     <EditArtikelModal
@@ -229,7 +192,6 @@ onMounted(() => {
     />
   </div>
 </template>
-
 
 <style scoped>
 .relative { position: relative; }
