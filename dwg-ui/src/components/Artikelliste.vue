@@ -4,7 +4,6 @@ import { supabase } from "../lib/supabase";
 import EditArtikelModal from "./EditArtikelModal.vue";
 
 const artikelliste = ref([]);
-
 const artikel = ref([]);
 const loading = ref(false);
 const errorMessage = ref("");
@@ -20,6 +19,11 @@ const totalItems = ref(0);
 const showEditModal = ref(false);
 const selectedArtikel = ref(null);
 
+// Für Hover- und Klick-Vorschau
+const hoverImage = ref(null);
+const clickedImage = ref(null);
+
+// Kategorien laden
 const fetchCategories = async () => {
   const { data, error } = await supabase.from("artikel").select("category");
   if (!error && data) {
@@ -27,15 +31,13 @@ const fetchCategories = async () => {
   }
 };
 
+// Artikel laden
 async function fetchArtikel() {
   loading.value = true;
   errorMessage.value = "";
 
   try {
-    let query = supabase
-      .from("artikel")
-      .select("*")
-      .order("id", { ascending: true });
+    let query = supabase.from("artikel").select("*").order("id", { ascending: true });
 
     if (selectedCategory.value !== "Alle") {
       query = query.eq("category", selectedCategory.value);
@@ -44,33 +46,29 @@ async function fetchArtikel() {
     const { data, error } = await query;
     if (error) throw new Error(error.message);
 
-    // Suche auf der Client-Seite
+    // Client-Suche
     if (searchQuery.value) {
       const term = searchQuery.value.toLowerCase();
       artikel.value = data.filter(
-        a =>
-          a.name?.toLowerCase().includes(term) ||
-          a.codenr?.toLowerCase().includes(term)
+        a => a.name?.toLowerCase().includes(term) || a.codenr?.toLowerCase().includes(term)
       );
     } else {
       artikel.value = data;
     }
 
-    artikelliste.value = data; // volle Liste für Bearbeitung etc.
+    artikelliste.value = data;
     totalItems.value = artikel.value.length;
-
   } catch (err) {
     errorMessage.value = err.message;
     artikel.value = [];
-    artikelliste.value = [];
   } finally {
     loading.value = false;
   }
-};
+}
 
 // Modal öffnen
-function openEditModal(artikel) {
-  selectedArtikel.value = { ...artikel }; // Kopie für Bearbeitung
+function openEditModal(art) {
+  selectedArtikel.value = { ...art };
   showEditModal.value = true;
 }
 
@@ -89,9 +87,15 @@ function saveArtikel(updatedArtikel) {
   closeEditModal();
 }
 
+// Supabase Public URL holen
+function getImageUrl(path) {
+  if (!path) return null;
+  return supabase.storage.from("artikel-bilder").getPublicUrl(path).data.publicUrl;
+}
+
 const totalPages = () => Math.ceil(totalItems.value / pageSize);
 
-
+// Watch für Filter und Suche
 watch([searchQuery, selectedCategory, currentPage], () => {
   fetchArtikel();
 });
@@ -102,26 +106,27 @@ onMounted(() => {
 });
 </script>
 
-
 <template>
   <div class="p-4">
     <h1 class="text-xl font-bold mb-4">Artikelliste</h1>
 
     <!-- Filter & Suche -->
-    <div class="flex gap-4 mb-4" >
+    <div class="flex gap-4 mb-4">
       <input
         v-model="searchQuery"
         type="text"
         placeholder="Suche nach Name oder CodeNr..."
         class="border p-2 rounded w-1/3"
-        style="height: 50px; width: 350px; padding-left: 50px; margin-right: 50px; font-size: 20px;"
-        
+        style="height: 50px; width: 350px; padding-left: 10px; font-size: 20px;"
       />
 
-      <select v-model="selectedCategory" class="border p-2 rounded" style="height: 50px; width: 350px; padding-left: 50px; margin-right: 50px;">
-        <option v-for="cat in categories" :key="cat" :value="cat" style="height: 50px; width: 350px; padding-left: 50px; margin-right: 50px;">
+      <select
+        v-model="selectedCategory"
+        class="border p-2 rounded"
+        style="height: 50px; width: 350px; padding-left: 10px;"
+      >
+        <option v-for="cat in categories" :key="cat" :value="cat">
           {{ cat }}
-          
         </option>
       </select>
     </div>
@@ -147,17 +152,34 @@ onMounted(() => {
           <tr
             v-for="art in artikel"
             :key="art.id"
-            class="hover:bg-gray-50 cursor-pointer"
+            class="hover:bg-gray-50 cursor-pointer relative"
           >
             <td class="p-2 border">{{ art.id }}</td>
-            <td class="p-2 border">
-              <img
+
+            <!-- Bildspalte mit Hover- und Klick-Vorschau -->
+            <td class="p-2 border relative">
+              <span
                 v-if="art.image_url"
-                :src="art.image_url"
-                alt="Artikelbild"
-                class="h-10 w-10 object-cover"
-              />
+                @mouseenter="hoverImage = getImageUrl(art.image_url)"
+                @mouseleave="hoverImage = null"
+                @click="clickedImage = getImageUrl(art.image_url)"
+                class="cursor-pointer text-blue-500"
+              >
+                🖼️
+              </span>
+
+              <div
+                v-if="hoverImage === getImageUrl(art.image_url) || clickedImage === getImageUrl(art.image_url)"
+                class="absolute z-50 mt-2 left-1/2 transform -translate-x-1/2 bg-white p-1 border shadow-lg rounded"
+                style="max-width: 200px; max-height: 200px;"
+              >
+                <img
+                  :src="getImageUrl(art.image_url)"
+                  class="object-contain w-full h-full rounded"
+                />
+              </div>
             </td>
+
             <td class="p-2 border">{{ art.name }}</td>
             <td class="p-2 border">{{ art.codenr }}</td>
             <td class="p-2 border">{{ art.salesprice }} €</td>
@@ -165,7 +187,7 @@ onMounted(() => {
             <td class="p-2 border">{{ art.unit }}</td>
             <td class="p-2 border">{{ art.category }}</td>
             <td class="p-2 border">
-              <button @click="openEditModal(artikel)">Bearbeiten</button>
+              <button @click="openEditModal(art)">Bearbeiten</button>
             </td>
           </tr>
         </tbody>
@@ -208,60 +230,8 @@ onMounted(() => {
   </div>
 </template>
 
+
 <style scoped>
-.artikel-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 20px;
-  font-family: Arial, sans-serif;
-}
-
-.artikel-table th,
-.artikel-table td {
-  border: 1px solid #ddd;
-  padding: 10px 12px;
-  text-align: left;
-}
-
-.artikel-table th {
-  background-color: #f4f4f4;
-  font-weight: bold;
-}
-
-.artikel-table tbody tr:nth-child(even) {
-  background-color: #fafafa;
-}
-
-.artikel-table tbody tr:hover {
-  background-color: #e9f5ff;
-}
-
-.btn-edit,
-.btn-delete {
-  padding: 4px 8px;
-  margin-right: 5px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.9rem;
-}
-
-.btn-edit {
-  background-color: #4caf50;
-  color: white;
-}
-
-.btn-edit:hover {
-  background-color: #45a049;
-}
-
-.btn-delete {
-  background-color: #f44336;
-  color: white;
-}
-
-.btn-delete:hover {
-  background-color: #d32f2f;
-}
-
+.relative { position: relative; }
+.absolute { position: absolute; top: -150%; left: 50%; transform: translateX(-50%); }
 </style>

@@ -14,7 +14,7 @@ import Artikelliste from "../components/Artikelliste.vue";
 
 <style scoped>
 .page {
-  padding-left: 250px;
+  padding-left: 50px;
   padding-top: 20px;
 }
 table {
