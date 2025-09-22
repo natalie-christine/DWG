@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch, computed } from "vue";
+import { ref, onMounted, computed, watch } from "vue";
 import { supabase } from "../lib/supabase";
 import EditArtikelModal from "./EditArtikelModal.vue";
 
@@ -13,39 +13,21 @@ const selectedCategory = ref("Alle");
 const categories = ref([]);
 
 const currentPage = ref(1);
-const pageSize = 50;
+const pageSize = ref(50);
 const totalItems = ref(0);
 
 const showEditModal = ref(false);
 const selectedArtikel = ref(null);
 
-// Auswahl / Warenkorb
+// Auswahl
 const selectedIds = ref([]);
 const selectAll = ref(false);
 
-// Hover / Click Preview
-const hoverImage = ref(null);
+// Overlay für Klick-Bild
 const clickedImage = ref(null);
-let hoverTimeout = null;
 
-// Hover / Click helpers
-function setHover(url) {
-  clearTimeout(hoverTimeout);
-  hoverTimeout = setTimeout(() => {
-    hoverImage.value = url;
-  }, 500); // 1 Sekunde warten
-}
-function clearHover() {
-  clearTimeout(hoverTimeout);
-  if (!clickedImage.value) {
-    hoverImage.value = null;
-  }
-}
-
-function toggleClick(url) {
-  clickedImage.value = clickedImage.value === url ? null : url;
-  if (!clickedImage.value) hoverImage.value = null;
-}
+// Warenkorb
+const cart = ref([]);
 
 // Supabase Public URL
 function getImageUrl(path) {
@@ -54,24 +36,31 @@ function getImageUrl(path) {
   return data.publicUrl;
 }
 
-// Artikel vom Backend laden
+// Kategorien laden
+async function fetchCategories() {
+  const { data, error } = await supabase.from("artikel").select("category");
+  if (!error && data) {
+    categories.value = ["Alle", ...new Set(data.map(a => a.category).filter(Boolean))];
+  }
+}
+
+// Artikel laden
 async function fetchArtikel() {
   loading.value = true;
-  errorMessage.value = "";
   try {
-    const { data, error } = await supabase
+    const { data, error, count } = await supabase
       .from("artikel")
-      .select("*")
+      .select("*", { count: "exact" })
       .order("id", { ascending: true })
-      .range((currentPage.value - 1) * pageSize, currentPage.value * pageSize - 1);
+      .range((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value - 1);
     if (error) throw error;
 
-    // Public URL schon vorab anlegen
     allArtikel.value = (data || []).map(a => ({
       ...a,
-      imagePreview: getImageUrl(a.image_url),
+      imagePreview: getImageUrl(a.image_url)
     }));
 
+    totalItems.value = count || 0;
     applyFilters();
   } catch (err) {
     console.error(err);
@@ -83,7 +72,7 @@ async function fetchArtikel() {
   }
 }
 
-// Filter / Suche
+// Filter
 function applyFilters() {
   let list = allArtikel.value.slice();
   if (selectedCategory.value && selectedCategory.value !== "Alle") {
@@ -93,24 +82,15 @@ function applyFilters() {
     const term = searchQuery.value.toLowerCase();
     list = list.filter(a =>
       (a.name && a.name.toLowerCase().includes(term)) ||
-      (a.codenr && a.codenr.toLowerCase().includes(term))
+      (a.code_nr && a.code_nr.toLowerCase().includes(term))
     );
   }
   artikel.value = list;
-  totalItems.value = list.length;
 
   if (selectAll.value) selectedIds.value = artikel.value.map(a => a.id);
 }
 
-// Kategorien laden
-async function fetchCategories() {
-  const { data, error } = await supabase.from("artikel").select("category");
-  if (!error && data) {
-    categories.value = ["Alle", ...new Set(data.map(a => a.category).filter(Boolean))];
-  }
-}
-
-// Modal öffnen / schließen
+// Modal
 function openEditModal(art) {
   selectedArtikel.value = { ...art };
   showEditModal.value = true;
@@ -120,39 +100,28 @@ function closeEditModal() {
   selectedArtikel.value = null;
 }
 
-// nach Edit: lokale Liste aktualisieren
-function saveArtikel(updatedArtikel) {
-  const idx = allArtikel.value.findIndex(a => a.id === updatedArtikel.id);
-  if (idx !== -1) {
-    allArtikel.value[idx] = { ...allArtikel.value[idx], ...updatedArtikel, imagePreview: getImageUrl(updatedArtikel.image_url) };
-  }
-  applyFilters();
-  closeEditModal();
+// Overlay
+function showOverlay(image) {
+  clickedImage.value = image;
 }
 
-// Auswahl-Handling
-function toggleSelectAll() {
-  if (selectAll.value) {
-    selectedIds.value = artikel.value.map(a => a.id);
-  } else {
-    selectedIds.value = [];
-  }
-}
-watch(selectedIds, ids => {
-  if (ids.length === artikel.value.length && artikel.value.length > 0) selectAll.value = true;
-  else selectAll.value = false;
-});
-
-// Warenkorb
-function addToCart() {
-  const chosen = allArtikel.value.filter(a => selectedIds.value.includes(a.id));
-  console.log("In Warenkorb:", chosen);
+// Warenkorb hinzufügen
+function addToCart(item = null) {
+  const toAdd = item ? [item] : allArtikel.value.filter(a => selectedIds.value.includes(a.id));
+  toAdd.forEach(i => {
+    if (!cart.value.find(c => c.id === i.id)) cart.value.push(i);
+  });
+  selectedIds.value = [];
+  selectAll.value = false;
 }
 
 // Pagination
-const totalPages = computed(() => Math.max(1, Math.ceil(totalItems.value / pageSize)));
+const totalPages = computed(() => Math.max(1, Math.ceil(totalItems.value / pageSize.value)));
+watch(currentPage, fetchArtikel);
 
-watch([searchQuery, selectedCategory], () => applyFilters());
+// Filter neu anwenden bei Suchbegriff/Kategorie
+watch([searchQuery, selectedCategory], applyFilters);
+
 onMounted(() => {
   fetchCategories();
   fetchArtikel();
@@ -160,118 +129,141 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="p-4">
-    <h1 class="text-xl font-bold mb-4">Artikelliste</h1>
+  <div class="container">
+    <h1 class="title">Artikelliste</h1>
 
     <!-- Filter & Suche -->
-    <div class="flex gap-4 mb-4">
-      <input v-model="searchQuery" type="text" placeholder="Suche nach Name oder CodeNr..." class="border p-2 rounded"
-             style="height:50px; width:350px; padding-left:10px; font-size:18px;" />
-      <select v-model="selectedCategory" class="border p-2 rounded" style="height:50px; width:250px; padding-left:10px;">
+    <div class="filters">
+      <input v-model="searchQuery" type="text" placeholder="Suche nach Name oder CodeNr..." />
+      <select v-model="selectedCategory">
         <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
       </select>
-      <div class="ml-auto flex items-center gap-2">
-        <button @click="addToCart" class="px-3 py-2 bg-blue-600 text-white rounded">In Warenkorb ({{ selectedIds.length }})</button>
-      </div>
+      <button @click="addToCart" class="btn main-btn">
+        Warenkorb bearbeiten / Angebot erstellen {{ selectedIds.length }} ausgewählt </button>
     </div>
 
     <!-- Tabelle -->
-    <div v-if="loading" class="p-4">Lade Artikel...</div>
+    <div v-if="loading" class="loading">Lade Artikel...</div>
     <div v-else>
-      <table class="table-auto border-collapse w-full">
+      <table class="artikel-table">
         <thead>
-          <tr class="bg-gray-100 text-left">
-            <th class="p-2 border"><input type="checkbox" v-model="selectAll" @change="toggleSelectAll" /></th>
-            <th class="p-2 border">ID</th>
-            <th class="p-2 border">Bild</th>
-            <th class="p-2 border">Name</th>
-            <th class="p-2 border">CodeNr</th>
-            <th class="p-2 border">Preis</th>
-            <th class="p-2 border">Lagerstand</th>
-            <th class="p-2 border">Einheit</th>
-            <th class="p-2 border">Kategorie</th>
-            <th class="p-2 border">Aktionen</th>
+          <tr>
+            <th>Bild</th>
+            <th>ID</th>
+            <th>Name</th>
+            <th>CodeNr</th>
+            <th>Preis</th>
+            <th>Lagerstand</th>
+            <th>Einheit</th>
+            <th>Kategorie</th>
+            <th>Aktionen</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="art in artikel" :key="art.id" class="hover:bg-gray-50">
-            <td class="p-2 border"><input type="checkbox" :value="art.id" v-model="selectedIds" @click.stop /></td>
-            <td class="p-2 border">{{ art.id }}</td>
-
-            <!-- Hover / Click Bild -->
-            <td class="p-2 border relative" style="width:70px;">
-             <span
-               v-if="art.imagePreview"
-               @mouseenter="setHover(art.imagePreview)"
-               @mouseleave="clearHover"
-               @click="toggleClick(art.imagePreview)"
-               class="cursor-pointer text-blue-500"
-              >
-                🖼️
-               </span>
+          <tr v-for="art in artikel" :key="art.id">
+            <td>
+              <img v-if="art.imagePreview" :src="art.imagePreview" class="thumbnail" @click="showOverlay(art.imagePreview)" />
             </td>
-
-            <td class="p-2 border">{{ art.name }}</td>
-            <td class="p-2 border">{{ art.codenr }}</td>
-            <td class="p-2 border">{{ art.salesprice }} €</td>
-            <td class="p-2 border">{{ art.stocktot }}</td>
-            <td class="p-2 border">{{ art.unit }}</td>
-            <td class="p-2 border">{{ art.category }}</td>
-            <td class="p-2 border">
-              <button @click="openEditModal(art)" class="px-2 py-1 bg-green-500 text-white rounded">Bearbeiten</button>
+            <td>{{ art.id }}</td>
+            <td>{{ art.name }}</td>
+            <td>{{ art.code_nr }}</td>
+            <td>{{ art.sales_price }} €</td>
+            <td>{{ art.stock_tot }}</td>
+            <td>{{ art.unit }}</td>
+            <td>{{ art.category }}</td>
+            <td>
+              <div class="actions">
+                <button class="btn" @click="openEditModal(art)">Bearbeiten</button>
+                <button class="btn" @click="addToCart(art)">In Warenkorb</button>
+              </div>
             </td>
           </tr>
         </tbody>
       </table>
 
-<!-- Overlay-Bild Vorschau -->
-<div 
-  v-if="hoverImage || clickedImage" 
-  class="overlay" 
-  @click="clickedImage = null; hoverImage = null"
->
-  <img :src="clickedImage || hoverImage" class="overlay-img" />
-</div>
+      <!-- Overlay für Klickbild -->
+      <div v-if="clickedImage" class="overlay" @click="clickedImage = null">
+        <img :src="clickedImage" class="overlay-img" />
+      </div>
 
-
-
-      <div class="flex justify-between items-center mt-4">
-        <button :disabled="currentPage===1" @click="currentPage--" class="px-3 py-1 border rounded disabled:opacity-50">Zurück</button>
+      <!-- Pagination -->
+      <div class="pagination">
+        <button :disabled="currentPage===1" @click="currentPage--">Zurück</button>
         <span>Seite {{ currentPage }} von {{ totalPages }}</span>
-        <button :disabled="currentPage===totalPages" @click="currentPage++" class="px-3 py-1 border rounded disabled:opacity-50">Weiter</button>
+        <button :disabled="currentPage===totalPages" @click="currentPage++">Weiter</button>
       </div>
     </div>
 
-    <div v-if="errorMessage" class="text-red-500 mt-2">{{ errorMessage }}</div>
+    <div v-if="errorMessage" class="error">{{ errorMessage }}</div>
 
-    <EditArtikelModal v-if="showEditModal" :artikel="selectedArtikel" @close="closeEditModal" @save="saveArtikel" />
+    <EditArtikelModal v-if="showEditModal" :artikel="selectedArtikel" @close="closeEditModal" @save="fetchArtikel" />
   </div>
 </template>
 
 <style scoped>
-.preview-box {
-  position: absolute;
-  z-index: 60;
-  top: 50%;
-  left: 100%;
-  transform: translateY(-50%);
-  background: white;
-  padding: 8px;
-  border: 1px solid #ddd;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.15);
-  border-radius: 8px;
-  max-width: 420px;
-  max-height: 420px;
-  margin-left: 12px;
+.container {
+  padding: 1rem;
+  font-family: Arial, sans-serif;
 }
-
-.preview-img {
-  display: block;
-  max-width: 400px;
-  max-height: 400px;
-  object-fit: contain;
+.title {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
 }
-
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.filters input, .filters select {
+  padding: 0.5rem;
+  font-size: 1rem;
+}
+.main-btn {
+  padding: 0.5rem 1rem;
+}
+.cart-preview {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: #555;
+}
+.loading {
+  padding: 1rem;
+}
+.artikel-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.artikel-table th, .artikel-table td {
+  border: 1px solid #ccc;
+  padding: 0.5rem;
+  text-align: left;
+}
+.artikel-table tr:hover {
+  background-color: #f9f9f9;
+}
+.thumbnail {
+  width: 100px;
+  height: 100px;
+  object-fit: cover;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: transform 0.2s;
+}
+.thumbnail:hover {
+  transform: scale(1.05);
+}
+.actions {
+  display: flex;
+  gap: 0.3rem;
+}
+.actions button {
+  flex: 1;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+  border-radius: 4px;
+}
 .overlay {
   position: fixed;
   top: 0;
@@ -285,16 +277,39 @@ onMounted(() => {
   z-index: 999;
   cursor: zoom-out;
 }
-
 .overlay-img {
   max-width: 80vw;
   max-height: 80vh;
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
   object-fit: contain;
 }
-
-
-
-
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.error {
+  color: red;
+  margin-top: 1rem;
+}
+/* Responsiv */
+@media (max-width: 768px) {
+  .filters {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .artikel-table th, .artikel-table td {
+    font-size: 0.9rem;
+    padding: 0.3rem;
+  }
+  .thumbnail {
+    width: 70px;
+    height: 70px;
+  }
+}
 </style>
