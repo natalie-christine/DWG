@@ -18,6 +18,7 @@ const route = useRoute();
 const tabs = [
   { name: "Dashboard", path: "/" },
   { name: "Artikel", path: "/artikel" },
+  { name: "Angebote Erstellen", path: "/angebotserstellung" },
   { name: "Inventur", path: "/inventur" },
   { name: "Angebote", path: "/angebote" },
   { name: "Bestellungen", path: "/bestellungen" },
