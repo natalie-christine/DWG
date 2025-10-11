@@ -237,7 +237,6 @@ onMounted(() => {
 }
 .artikel-table th, .artikel-table td {
   border: 1px solid #ccc;
-  padding: 0.5rem;
   text-align: left;
 }
 .artikel-table tr:hover {
