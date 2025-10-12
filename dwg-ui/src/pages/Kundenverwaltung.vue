@@ -1,194 +1,226 @@
+<script setup>
+import { ref, onMounted, computed, watch } from "vue";
+import { supabase } from "../lib/supabase";
+import EditKundenModal from "../components/EditKundenModal.vue"; 
+
+const allKunden = ref([]);
+const kunden = ref([]);
+const loading = ref(false);
+const errorMessage = ref("");
+
+const searchQuery = ref("");
+const selectedRegion = ref("Alle");
+const regionen = ref([]);
+
+const currentPage = ref(1);
+const pageSize = ref(50);
+const totalItems = ref(0);
+
+const showEditModal = ref(false);
+const selectedKunde = ref(null);
+
+const selectedIds = ref([]);
+const selectAll = ref(false);
+
+// Regionen laden (falls vorhanden)
+async function fetchRegionen() {
+  const { data, error } = await supabase.from("kunden").select("ort");
+  if (!error && data) {
+    regionen.value = ["Alle", ...new Set(data.map(k => k.region).filter(Boolean))];
+  }
+}
+
+// Kunden laden
+async function fetchKunden() {
+  loading.value = true;
+  try {
+    const { data, error, count } = await supabase
+      .from("kunden")
+      .select("*", { count: "exact" })
+      .order("id", { ascending: true })
+      .range((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value - 1);
+    if (error) throw error;
+
+    allKunden.value = data || [];
+    totalItems.value = count || 0;
+    applyFilters();
+  } catch (err) {
+console.error(err);
+    errorMessage.value = err.message || "Fehler beim Laden der Kunden";
+    allKunden.value = [];
+    kunden.value = [];
+  } finally {
+    loading.value = false;
+  }
+}
+
+// Filter
+function applyFilters() {
+  let list = allKunden.value.slice();
+  if (selectedRegion.value && selectedRegion.value !== "Alle") {
+    list = list.filter(k => k.region === selectedRegion.value);
+  }
+  if (searchQuery.value) {
+    const term = searchQuery.value.toLowerCase();
+    list = list.filter(k =>
+      (k.name && k.name.toLowerCase().includes(term)) ||
+      (k.firma && k.firma.toLowerCase().includes(term)) ||
+      (k.ort  && k.ort.toLowerCase().includes(term)) ||
+      (k.kundennummer && k.kundennummer.toString().toLowerCase().includes(term))
+    );
+  }
+  kunden.value = list;
+  if (selectAll.value) selectedIds.value = kunden.value.map(k => k.id);
+}
+
+// Modal
+function openEditModal(kunde) {
+  selectedKunde.value = { ...kunde };
+  showEditModal.value = true;
+}
+function closeEditModal() {
+  showEditModal.value = false;
+  selectedKunde.value = null;
+}
+
+// Pagination
+const totalPages = computed(() => Math.max(1, Math.ceil(totalItems.value / pageSize.value)));
+watch(currentPage, fetchKunden);
+
+// Filter neu anwenden
+watch([searchQuery, selectedRegion], applyFilters);
+
+onMounted(() => {
+  fetchRegionen();
+  fetchKunden();
+});
+</script>
+
 <template>
-    <div class="p-6">
-      <h1 class="text-2xl font-bold mb-4">Kundenverwaltung</h1>
-  
-      <!-- Suchfeld + Neu-Button -->
-      <div class="flex items-center mb-4 gap-3">
-        <input
-          v-model="suchbegriff"
-          type="text"
-          placeholder="Suche nach Name, Firma oder Nummer..."
-          class="border rounded px-3 py-2 flex-1"
-        />
-        <button @click="neuerKunde" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-          + Neuer Kunde
-        </button>
-      </div>
-  
-      <!-- Lade-/Fehlerstatus -->
-      <div v-if="ladeStatus === 'laden'" class="text-gray-500">Kunden werden geladen...</div>
-      <div v-else-if="ladeStatus === 'fehler'" class="text-red-500">Fehler beim Laden der Kunden.</div>
-  
-      <!-- Tabelle -->
-      <table v-if="gefilterteKunden.length > 0" class="min-w-full border rounded">
-        <thead class="bg-gray-100">
-          <tr>
-            <th class="px-3 py-2 border cursor-pointer" @click="sortiere('nachname')">
-              Nachname <span v-if="sortSpalte === 'nachname'">{{ sortRichtung === 'asc' ? '▲' : '▼' }}</span>
-            </th>
-            <th class="px-3 py-2 border cursor-pointer" @click="sortiere('firma')">
-              Firma <span v-if="sortSpalte === 'firma'">{{ sortRichtung === 'asc' ? '▲' : '▼' }}</span>
-            </th>
-            <th class="px-3 py-2 border cursor-pointer" @click="sortiere('nummer')">
-              Nummer <span v-if="sortSpalte === 'nummer'">{{ sortRichtung === 'asc' ? '▲' : '▼' }}</span>
-            </th>
-            <th class="px-3 py-2 border text-center">Aktionen</th>
+  <div class="container">
+    <h1 class="title">Kundenverwaltung</h1>
+
+    <!-- Filter & Suche -->
+    <div class="filters">
+      <input v-model="searchQuery" type="text" placeholder="Suche nach Name, Firma oder Kundennummer..." />
+    </div>
+
+    <!-- Tabelle -->
+    <div v-if="loading" class="loading">Lade Kunden...</div>
+    <div v-else>
+      <table class="kunden-table">
+        <thead>
+          <tr>            
+            <th>Kundennummer</th>
+            <th>Name</th>
+            <th>Firma</th>
+            <th>Email</th>
+            <th>Region</th>
+            <th>Aktionen</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="kunde in gefilterteKunden" :key="kunde.id">
-            <td class="border px-3 py-2">{{ kunde.nachname }}</td>
-            <td class="border px-3 py-2">{{ kunde.firma }}</td>
-            <td class="border px-3 py-2">{{ kunde.nummer }}</td>
-            <td class="border px-3 py-2 text-center">
-              <button @click="bearbeiten(kunde)" class="text-blue-600 hover:underline mr-2">Bearbeiten</button>
-              <button @click="loeschen(kunde.id)" class="text-red-600 hover:underline">Löschen</button>
+          <tr v-for="kunde in kunden" :key="kunde.id">
+            <td>{{ kunde.nummer }}</td>
+            <td>{{ kunde.kontaktperson }}</td>
+            <td>{{ kunde.firma }}</td>
+            <td>{{ kunde.email }}</td>
+            <td>{{ kunde.ort }}</td>
+            <td>
+              <div class="actions">
+                <button class="btn" @click="openEditModal(kunde)">Bearbeiten</button>
+              </div>
             </td>
           </tr>
         </tbody>
       </table>
-  
-      <div v-else-if="ladeStatus === 'fertig'" class="text-gray-500 mt-3">
-        Keine Kunden gefunden.
-      </div>
-  
-      <!-- Modal für Bearbeiten/Neu -->
-      <div
-        v-if="zeigeModal"
-        class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center"
-      >
-        <div class="bg-white p-6 rounded shadow-lg w-96">
-          <h2 class="text-lg font-semibold mb-4">
-            {{ aktuellerKunde?.id ? 'Kunde bearbeiten' : 'Neuen Kunden anlegen' }}
-          </h2>
-  
-          <div class="space-y-3">
-            <input
-              v-model="aktuellerKunde.nachname"
-              type="text"
-              placeholder="Nachname"
-              class="border rounded px-3 py-2 w-full"
-            />
-            <input
-              v-model="aktuellerKunde.firma"
-              type="text"
-              placeholder="Firma"
-              class="border rounded px-3 py-2 w-full"
-            />
-            <input
-              v-model="aktuellerKunde.nummer"
-              type="text"
-              placeholder="Kundennummer"
-              class="border rounded px-3 py-2 w-full"
-            />
-          </div>
-  
-          <div class="flex justify-end mt-4 gap-2">
-            <button @click="zeigeModal = false" class="border px-3 py-2 rounded">Abbrechen</button>
-            <button
-              @click="speichern"
-              class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-            >
-              Speichern
-            </button>
-          </div>
-        </div>
+
+      <!-- Pagination -->
+      <div class="pagination">
+        <button :disabled="currentPage===1" @click="currentPage--">Zurück</button>
+        <span>Seite {{ currentPage }} von {{ totalPages }}</span>
+        <button :disabled="currentPage===totalPages" @click="currentPage++">Weiter</button>
       </div>
     </div>
-  </template>
-  
-  <script setup>
-  import { ref, computed, onMounted } from 'vue';
-  import { supabase } from "../lib/supabase";
-  
-  // Reactive states
-  const kunden = ref([])
-  const ladeStatus = ref('laden')
-  const suchbegriff = ref('')
-  const sortSpalte = ref('nachname')
-  const sortRichtung = ref('asc')
-  
-  // Modal-Steuerung
-  const zeigeModal = ref(false)
-  const aktuellerKunde = ref({ nachname: '', firma: '', nummer: '' })
-  
-  // Kunden laden
-  async function ladeKunden() {
-    ladeStatus.value = 'laden'
-    const { data, error } = await supabase.from('kunden').select('*')
-    if (error) {
-      console.error(error)
-      ladeStatus.value = 'fehler'
-    } else {
-      kunden.value = data || []
-      ladeStatus.value = 'fertig'
-    }
+
+    <div v-if="errorMessage" class="error">{{ errorMessage }}</div>
+
+    <EditKundenModal
+      v-if="showEditModal"
+      :kunde="selectedKunde"
+      @close="closeEditModal"
+      @save="fetchKunden"
+    />
+  </div>
+</template>
+
+<style scoped>
+.container {
+  padding: 1rem;
+  font-family: Arial, sans-serif;
+}
+.title {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+}
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.filters input,
+.filters select {
+  padding: 0.5rem;
+  font-size: 1rem;
+}
+.kunden-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.kunden-table th,
+.kunden-table td {
+  border: 1px solid #ccc;
+  text-align: left;
+  padding: 0.5rem;
+}
+.kunden-table tr:hover {
+  background-color: #f9f9f9;
+}
+.actions {
+  display: flex;
+  gap: 0.3rem;
+}
+.actions button {
+  flex: 1;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.error {
+  color: red;
+  margin-top: 1rem;
+}
+@media (max-width: 768px) {
+  .filters {
+    flex-direction: column;
+    align-items: flex-start;
   }
-  onMounted(ladeKunden)
-  
-  // Filter und Sortierung
-  const gefilterteKunden = computed(() => {
-    const s = suchbegriff.value.toLowerCase()
-    const sort = [...kunden.value].sort((a, b) => {
-      const va = a[sortSpalte.value]?.toString().toLowerCase() || ''
-      const vb = b[sortSpalte.value]?.toString().toLowerCase() || ''
-      return sortRichtung.value === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va)
-    })
-    return sort.filter(k =>
-      [k.nachname, k.firma, k.nummer].some(v =>
-        v?.toString().toLowerCase().includes(s)
-      )
-    )
-  })
-  
-  // Sortierfunktion
-  function sortiere(spalte) {
-    if (sortSpalte.value === spalte) {
-      sortRichtung.value = sortRichtung.value === 'asc' ? 'desc' : 'asc'
-    } else {
-      sortSpalte.value = spalte
-      sortRichtung.value = 'asc'
-    }
+  .kunden-table th,
+  .kunden-table td {
+    font-size: 0.9rem;
+    padding: 0.3rem;
   }
-  
-  // Aktionen
-  function neuerKunde() {
-    aktuellerKunde.value = { nachname: '', firma: '', nummer: '' }
-    zeigeModal.value = true
-  }
-  
-  function bearbeiten(kunde) {
-    aktuellerKunde.value = { ...kunde }
-    zeigeModal.value = true
-  }
-  
-  async function speichern() {
-    const k = aktuellerKunde.value
-    if (k.id) {
-      const { error } = await supabase.from('kunden').update(k).eq('id', k.id)
-      if (error) console.error(error)
-    } else {
-      const { error } = await supabase.from('kunden').insert([k])
-      if (error) console.error(error)
-    }
-    zeigeModal.value = false
-    ladeKunden()
-  }
-  
-  async function loeschen(id) {
-    if (!confirm('Diesen Kunden wirklich löschen?')) return
-    const { error } = await supabase.from('kunden').delete().eq('id', id)
-    if (error) console.error(error)
-    ladeKunden()
-  }
-  </script>
-  
-  <style scoped>
-  table {
-    border-collapse: collapse;
-  }
-  th, td {
-    font-size: 0.95rem;
-  }
-  </style>
-  
+}
+</style>
