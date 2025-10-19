@@ -1,7 +1,12 @@
 <script setup>
 import { ref, onMounted, computed, watch } from "vue";
 import { supabase } from "../lib/supabase";
-import EditArtikelModal from "./EditArtikelModal.vue";
+import EditArtikelModal from "../components/EditArtikelModal.vue";
+import { useRouter } from "vue-router";
+import { showToast } from "../lib/toast";
+
+
+const router = useRouter();
 
 const allArtikel = ref([]);
 const artikel = ref([]);
@@ -19,17 +24,10 @@ const totalItems = ref(0);
 const showEditModal = ref(false);
 const selectedArtikel = ref(null);
 
-// Auswahl
-const selectedIds = ref([]);
-const selectAll = ref(false);
-
-// Overlay für Klick-Bild
 const clickedImage = ref(null);
-
-// Warenkorb
 const cart = ref([]);
 
-// Supabase Public URL
+// Public URL für Bilder
 function getImageUrl(path) {
   if (!path) return null;
   const { data } = supabase.storage.from("artikel-bilder").getPublicUrl(path);
@@ -53,6 +51,7 @@ async function fetchArtikel() {
       .select("*", { count: "exact" })
       .order("id", { ascending: true })
       .range((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value - 1);
+
     if (error) throw error;
 
     allArtikel.value = (data || []).map(a => ({
@@ -64,11 +63,11 @@ async function fetchArtikel() {
     applyFilters();
   } catch (err) {
     console.error(err);
+    showToast("Fehler beim Speichern.", "error");
     errorMessage.value = err.message || "Fehler beim Laden der Artikel";
-    allArtikel.value = [];
-    artikel.value = [];
   } finally {
     loading.value = false;
+    showToast("Artikel erfolgreich gelöscht.", "success");
   }
 }
 
@@ -86,40 +85,62 @@ function applyFilters() {
     );
   }
   artikel.value = list;
-
-  if (selectAll.value) selectedIds.value = artikel.value.map(a => a.id);
 }
 
-// Modal
+// Modal öffnen
 function openEditModal(art) {
   selectedArtikel.value = { ...art };
   showEditModal.value = true;
 }
+
+// Neuen Artikel anlegen
+function createNewArtikel() {
+  selectedArtikel.value = {
+    name: "",
+    code_nr: "",
+    sales_price: 0,
+    stock_tot: 0,
+    unit: "",
+    category: "",
+    image_url: ""
+  };
+  showEditModal.value = true;
+}
+
+// Modal schließen
 function closeEditModal() {
   showEditModal.value = false;
   selectedArtikel.value = null;
 }
 
-// Overlay
-function showOverlay(image) {
-  clickedImage.value = image;
+// Artikel löschen
+async function deleteArtikel(id) {
+  if (!confirm("Diesen Artikel wirklich löschen?")) return;
+  const { error } = await supabase.from("artikel").delete().eq("id", id);
+  if (error) {
+    alert("Fehler beim Löschen.");
+  } else {
+    await fetchArtikel();
+  }
 }
 
 // Warenkorb hinzufügen
-function addToCart(item = null) {
-  const toAdd = item ? [item] : allArtikel.value.filter(a => selectedIds.value.includes(a.id));
-  toAdd.forEach(i => {
-    if (!cart.value.find(c => c.id === i.id)) cart.value.push(i);
-  });
-  selectedIds.value = [];
-  selectAll.value = false;
+function addToCart(item) {
+  if (!cart.value.find(c => c.id === item.id)) {
+    cart.value.push(item);
+  }
 }
 
-// Pagination
+// Zum Angebotseditor wechseln
+function openAngebotEditor() {
+  router.push({
+    path: "/AngebotsErstellung",
+    query: { cart: JSON.stringify(cart.value) }
+  });
+}
+
 const totalPages = computed(() => Math.max(1, Math.ceil(totalItems.value / pageSize.value)));
 watch(currentPage, fetchArtikel);
-
-// Filter neu anwenden bei Suchbegriff/Kategorie
 watch([searchQuery, selectedCategory], applyFilters);
 
 onMounted(() => {
@@ -129,186 +150,219 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="container">
-    <h1 class="title">Artikelliste</h1>
+  <div class="page-container">
+    <header class="header">
+      <h1>Artikelliste</h1>
+      <div class="actions-header">
+        <button class="btn primary" @click="createNewArtikel">+ Neuer Artikel</button>
+        <button class="btn secondary" @click="openAngebotEditor">
+          Weiter zur Angebots-Erstellung ({{ cart.length }})
+        </button>
+      </div>
+    </header>
 
-    <!-- Filter & Suche -->
     <div class="filters">
-      <input v-model="searchQuery" type="text" placeholder="Suche nach Name oder CodeNr..." />
+      <input v-model="searchQuery" placeholder="🔍 Suche nach Name oder Code..." />
       <select v-model="selectedCategory">
         <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
       </select>
-      <button @click="addToCart" class="btn main-btn">
-        Warenkorb bearbeiten / Angebot erstellen {{ selectedIds.length }} ausgewählt </button>
     </div>
 
-    <!-- Tabelle -->
     <div v-if="loading" class="loading">Lade Artikel...</div>
-    <div v-else>
-      <table class="artikel-table">
-        <thead>
-          <tr>
-            <th>Bild</th>
-            <th>ID</th>
-            <th>Name</th>
-            <th>CodeNr</th>
-            <th>Preis</th>
-            <th>Lagerstand</th>
-            <th>Einheit</th>
-            <th>Kategorie</th>
-            <th>Aktionen</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="art in artikel" :key="art.id">
-            <td>
-              <img v-if="art.imagePreview" :src="art.imagePreview" class="thumbnail" @click="showOverlay(art.imagePreview)" />
-            </td>
-            <td>{{ art.id }}</td>
-            <td>{{ art.name }}</td>
-            <td>{{ art.code_nr }}</td>
-            <td>{{ art.sales_price }} €</td>
-            <td>{{ art.stock_tot }}</td>
-            <td>{{ art.unit }}</td>
-            <td>{{ art.category }}</td>
-            <td>
-              <div class="actions">
-                <button class="btn" @click="openEditModal(art)">Bearbeiten</button>
-                <button class="btn" @click="addToCart(art)">In Warenkorb</button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
 
-      <!-- Overlay für Klickbild -->
-      <div v-if="clickedImage" class="overlay" @click="clickedImage = null">
-        <img :src="clickedImage" class="overlay-img" />
-      </div>
+    <table v-else class="clean-table">
+      <thead>
+        <tr>
+          <th>Bild</th>
+          <th>Name</th>
+          <th>Code</th>
+          <th>Preis (€)</th>
+          <th>Lager</th>
+          <th>Einheit</th>
+          <th>Kategorie</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="art in artikel" :key="art.id">
+          <td>
+            <img v-if="art.imagePreview" :src="art.imagePreview" class="thumb" @click="clickedImage = art.imagePreview" />
+          </td>
+          <td>{{ art.name }}</td>
+          <td>{{ art.code_nr }}</td>
+          <td>{{ art.sales_price?.toFixed(2) }}</td>
+          <td>{{ art.stock_tot }}</td>
+          <td>{{ art.unit }}</td>
+          <td>{{ art.category }}</td>
+          <td class="row-actions">
+            <button class="btn small" @click="openEditModal(art)">Bearbeiten</button>
+            <button class="btn small" @click="addToCart(art)">Warenkorb</button>
+            <button class="btn small danger" @click="deleteArtikel(art.id)">Löschen</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
 
-      <!-- Pagination -->
-      <div class="pagination">
-        <button :disabled="currentPage===1" @click="currentPage--">Zurück</button>
-        <span>Seite {{ currentPage }} von {{ totalPages }}</span>
-        <button :disabled="currentPage===totalPages" @click="currentPage++">Weiter</button>
-      </div>
+    <!-- Pagination -->
+    <div class="pagination">
+      <button :disabled="currentPage===1" @click="currentPage--">◀</button>
+      <span>Seite {{ currentPage }} von {{ totalPages }}</span>
+      <button :disabled="currentPage===totalPages" @click="currentPage++">▶</button>
     </div>
+
+    <!-- Overlay -->
+    <div v-if="clickedImage" class="overlay" @click="clickedImage = null">
+      <img :src="clickedImage" />
+    </div>
+
+    <EditArtikelModal
+      v-if="showEditModal"
+      :artikel="selectedArtikel"
+      @close="closeEditModal"
+      @save="fetchArtikel"
+    />
 
     <div v-if="errorMessage" class="error">{{ errorMessage }}</div>
-
-    <EditArtikelModal v-if="showEditModal" :artikel="selectedArtikel" @close="closeEditModal" @save="fetchArtikel" />
   </div>
 </template>
 
 <style scoped>
-.container {
-  padding: 1rem;
-  font-family: Arial, sans-serif;
+.page-container {
+  max-width: 1200px;
+  margin: auto;
+  padding: 2rem;
+  font-family: system-ui, sans-serif;
+  color: #222;
 }
-.title {
-  font-size: 1.5rem;
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 1rem;
 }
+
+h1 {
+  font-size: 1.6rem;
+  font-weight: 600;
+}
+
+.actions-header {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .filters {
   display: flex;
-  flex-wrap: wrap;
   gap: 0.5rem;
-  align-items: center;
   margin-bottom: 1rem;
 }
-.filters input, .filters select {
+
+input, select {
   padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
   font-size: 1rem;
+  flex: 1;
 }
-.main-btn {
-  padding: 0.5rem 1rem;
-}
-.cart-preview {
-  margin-top: 0.5rem;
-  font-size: 0.9rem;
-  color: #555;
-}
-.loading {
-  padding: 1rem;
-}
-.artikel-table {
+
+.clean-table {
   width: 100%;
   border-collapse: collapse;
+  background: white;
+  box-shadow: 0 0 10px rgba(0,0,0,0.05);
 }
-.artikel-table th, .artikel-table td {
-  border: 1px solid #ccc;
+
+.clean-table th {
+  background: #f9f9f9;
   text-align: left;
+  padding: 0.75rem;
+  font-weight: 600;
+  color: #333;
+  border-bottom: 1px solid #ddd;
 }
-.artikel-table tr:hover {
-  background-color: #f9f9f9;
+
+.clean-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid #eee;
+  vertical-align: middle;
 }
-.thumbnail {
-  width: 100px;
-  height: 100px;
+
+.clean-table tr:hover {
+  background-color: #f6f8fa;
+}
+
+.thumb {
+  width: 70px;
+  height: 70px;
   object-fit: cover;
-  cursor: pointer;
   border-radius: 6px;
-  transition: transform 0.2s;
-}
-.thumbnail:hover {
-  transform: scale(1.05);
-}
-.actions {
-  display: flex;
-  gap: 0.3rem;
-}
-.actions button {
-  flex: 1;
-  padding: 0.3rem 0.5rem;
   cursor: pointer;
-  border-radius: 4px;
 }
-.overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0,0,0,0.7);
+
+.row-actions {
   display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 999;
-  cursor: zoom-out;
+  gap: 0.4rem;
 }
-.overlay-img {
-  max-width: 80vw;
-  max-height: 80vh;
-  border-radius: 10px;
-  object-fit: contain;
+
+.btn {
+  padding: 0.4rem 0.7rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background 0.2s;
 }
+
+.btn.primary { background: #2563eb; color: white; }
+.btn.primary:hover { background: #1e40af; }
+
+.btn.secondary { background: #e5e7eb; color: #111; }
+.btn.secondary:hover { background: #d1d5db; }
+
+.btn.small { font-size: 0.85rem; padding: 0.3rem 0.6rem; }
+.btn.danger { background: #dc2626; color: white; }
+.btn.danger:hover { background: #991b1b; }
+
+.loading { text-align: center; padding: 2rem; }
+
 .pagination {
   display: flex;
   justify-content: center;
+  align-items: center;
   gap: 1rem;
-  margin-top: 1rem;
+  margin-top: 1.5rem;
+}
+
+.pagination button {
+  padding: 0.4rem 0.7rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  cursor: pointer;
+  background: white;
 }
 .pagination button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 999;
+}
+.overlay img {
+  max-width: 80%;
+  max-height: 80%;
+  border-radius: 10px;
+}
 .error {
   color: red;
+  text-align: center;
   margin-top: 1rem;
-}
-/* Responsiv */
-@media (max-width: 768px) {
-  .filters {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .artikel-table th, .artikel-table td {
-    font-size: 0.9rem;
-    padding: 0.3rem;
-  }
-  .thumbnail {
-    width: 70px;
-    height: 70px;
-  }
 }
 </style>

@@ -1,35 +1,33 @@
 <script setup>
 import { reactive, ref, watch, onMounted } from "vue";
 import { supabase } from "../lib/supabase";
+import { showToast } from "../lib/toast";
 import Swal from "sweetalert2";
 
-// Props & Events
 const props = defineProps({
   artikel: { type: Object, required: true }
 });
 const emit = defineEmits(["close", "save"]);
 
-// Lokale Kopie für Bearbeitung
 const localArtikel = reactive({ ...props.artikel });
 let originalArtikel = { ...props.artikel };
-
-// Datei für Upload
 const selectedFile = ref(null);
 const imagePreview = ref(null);
 
-// Watch auf Props
-watch(() => props.artikel, (newVal) => {
-  Object.assign(localArtikel, newVal);
-  originalArtikel = { ...newVal };
-  imagePreview.value = getImageUrl(localArtikel.image_url);
-}, { deep: true });
+watch(
+  () => props.artikel,
+  (newVal) => {
+    Object.assign(localArtikel, newVal);
+    originalArtikel = { ...newVal };
+    imagePreview.value = getImageUrl(localArtikel.image_url);
+  },
+  { deep: true }
+);
 
-// Beim Mount direkt Preview setzen
 onMounted(() => {
   imagePreview.value = getImageUrl(localArtikel.image_url);
 });
 
-// Datei auswählen
 function onFileChange(event) {
   selectedFile.value = event.target.files[0];
   if (selectedFile.value) {
@@ -37,18 +35,12 @@ function onFileChange(event) {
   }
 }
 
-// Supabase Public URL generieren
 function getImageUrl(path) {
-  console.log("getImageUrl Input:", path);
   if (!path) return null;
-  const { data, error } = supabase.storage.from("artikel-bilder").getPublicUrl(path);
-  console.log("getImageUrl Output:", data, error);
-  if (error) return null;
-  return data.publicUrl;
+  const { data } = supabase.storage.from("artikel-bilder").getPublicUrl(path);
+  return data?.publicUrl || null;
 }
 
-
-// Modal schließen
 function closeModal() {
   const changed = JSON.stringify(localArtikel) !== JSON.stringify(originalArtikel);
   if (changed) {
@@ -67,48 +59,78 @@ function closeModal() {
   }
 }
 
-// Änderungen speichern
 async function saveChanges() {
   try {
-    let imagePath = localArtikel.image_url; // nur Pfad speichern
+    // --- Pflichtfelder prüfen ---
+    if (!localArtikel.name) throw new Error("Name ist erforderlich.");
+    if (!localArtikel.code_nr) throw new Error("Code-Nr ist erforderlich.");
 
+    // --- Duplikatsprüfung (nur bei Neuanlage oder geänderter code_nr) ---
+    const isNew = !localArtikel.id;
+    if (isNew || localArtikel.code_nr !== originalArtikel.code_nr) {
+      const { data: dup } = await supabase
+        .from("artikel")
+        .select("id")
+        .eq("code_nr", localArtikel.code_nr);
+
+      if (dup && dup.length > 0) {
+        throw new Error("Diese Code-Nr existiert bereits.");
+      }
+    }
+
+    // --- Bild hochladen falls neu ---
+    let imagePath = localArtikel.image_url;
     if (selectedFile.value) {
-      const safeFileName = `picture/${localArtikel.id}_${Date.now()}`;
-
+      const safeFileName = `picture/${localArtikel.code_nr}_${Date.now()}`;
       const { error: uploadError } = await supabase.storage
         .from("artikel-bilder")
         .upload(safeFileName, selectedFile.value, { upsert: true });
-
       if (uploadError) throw uploadError;
-
-      imagePath = safeFileName; // Nur den Pfad merken
+      imagePath = safeFileName;
     }
 
-    // Artikel in DB aktualisieren
-    const { error: dbError } = await supabase
-      .from("artikel")
-      .update({
-        name: localArtikel.name,
-        code_nr: localArtikel.code_nr,
-        sales_price: localArtikel.sales_price,
-        stock_tot: localArtikel.stock_tot,
-        unit: localArtikel.unit,
-        category: localArtikel.category,
-        image_url: imagePath // nur den Pfad speichern
-      })
-      .eq("id", localArtikel.id);
+    // --- Einfügen oder Aktualisieren ---
+    if (isNew) {
+      const { data, error } = await supabase
+  .from("artikel")
+  .insert([
+    {
+      name: localArtikel.name,
+      code_nr: localArtikel.code_nr,
+      sales_price: localArtikel.sales_price || 0,
+      stock_tot: localArtikel.stock_tot || 0,
+      unit: localArtikel.unit || "",
+      category: localArtikel.category || "",
+      image_url: imagePath
+    }
+  ])
+  .select()
+  .single();
 
-    if (dbError) throw dbError;
-
-    // Preview sofort aktualisieren
-    imagePreview.value = getImageUrl(imagePath);
+      if (error) throw error;
+      localArtikel.id = data.id;
+    } else {
+      const { error: dbError } = await supabase
+        .from("artikel")
+        .update({
+          name: localArtikel.name,
+          code_nr: localArtikel.code_nr,
+          sales_price: localArtikel.sales_price,
+          stock_tot: localArtikel.stock_tot,
+          unit: localArtikel.unit,
+          category: localArtikel.category,
+          image_url: imagePath
+        })
+        .eq("id", localArtikel.id);
+      if (dbError) throw dbError;
+    }
 
     emit("save", { ...localArtikel, image_url: imagePath });
     emit("close");
 
     await Swal.fire({
       title: "Gespeichert",
-      text: "Die Änderungen wurden erfolgreich gespeichert.",
+      text: isNew ? "Artikel erfolgreich angelegt." : "Änderungen gespeichert.",
       icon: "success",
       timer: 1500,
       showConfirmButton: false
@@ -122,21 +144,21 @@ async function saveChanges() {
 <template>
   <div class="modal-overlay">
     <div class="modal">
-      <h2>Artikel bearbeiten</h2>
+      <h2>{{ localArtikel.id ? "Artikel bearbeiten" : "Neuen Artikel anlegen" }}</h2>
 
       <form @submit.prevent="saveChanges">
         <div class="form-row">
           <label>ID:</label>
-          <input type="text" v-model="localArtikel.id" disabled />
+          <input type="text" v-model="localArtikel.id" disabled placeholder="(neu)" />
 
           <label>Name:</label>
           <input type="text" v-model="localArtikel.name" required />
 
           <label>Code-Nr:</label>
-          <input type="text" v-model="localArtikel.code_nr" />
+          <input type="text" v-model="localArtikel.code_nr" required />
 
           <label>Preis:</label>
-          <input type="number" v-model="localArtikel.sales_price" required step="0.01" />
+          <input type="number" v-model="localArtikel.sales_price" step="0.01" />
 
           <label>Lagerstand:</label>
           <input type="number" v-model="localArtikel.stock_tot" />
@@ -148,7 +170,6 @@ async function saveChanges() {
           <input type="text" v-model="localArtikel.category" />
         </div>
 
-        <!-- Bild Vorschau -->
         <div class="image-section">
           <label>Bild:</label>
           <input type="file" @change="onFileChange" accept="image/*" />
