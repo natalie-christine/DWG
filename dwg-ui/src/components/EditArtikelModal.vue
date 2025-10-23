@@ -63,7 +63,7 @@ async function saveChanges() {
   try {
     // --- Pflichtfelder prüfen ---
     if (!localArtikel.name) throw new Error("Name ist erforderlich.");
-    if (!localArtikel.code_nr) throw new Error("Code-Nr ist erforderlich.");
+    if (!localArtikel.sales_price) throw new Error("Code-Nr ist erforderlich.");
 
     // --- Duplikatsprüfung (nur bei Neuanlage oder geänderter code_nr) ---
     const isNew = !localArtikel.id;
@@ -71,17 +71,12 @@ async function saveChanges() {
       const { data: dup } = await supabase
         .from("artikel")
         .select("id")
-        .eq("code_nr", localArtikel.code_nr);
-
-      if (dup && dup.length > 0) {
-        throw new Error("Diese Code-Nr existiert bereits.");
-      }
     }
 
     // --- Bild hochladen falls neu ---
     let imagePath = localArtikel.image_url;
     if (selectedFile.value) {
-      const safeFileName = `picture/${localArtikel.code_nr}_${Date.now()}`;
+      const safeFileName = `picture/${localArtikel.id}_${Date.now()}`;
       const { error: uploadError } = await supabase.storage
         .from("artikel-bilder")
         .upload(safeFileName, selectedFile.value, { upsert: true });
@@ -155,7 +150,7 @@ async function saveChanges() {
           <input type="text" v-model="localArtikel.name" required />
 
           <label>Code-Nr:</label>
-          <input type="text" v-model="localArtikel.code_nr" required />
+          <input type="text" v-model="localArtikel.code_nr"  />
 
           <label>Preis:</label>
           <input type="number" v-model="localArtikel.sales_price" step="0.01" />

@@ -3,7 +3,6 @@ import { ref, onMounted, computed, watch } from "vue";
 import { supabase } from "../lib/supabase";
 import EditArtikelModal from "../components/EditArtikelModal.vue";
 import { useRouter } from "vue-router";
-import { showToast } from "../lib/toast";
 
 
 const router = useRouter();
@@ -67,7 +66,6 @@ async function fetchArtikel() {
     errorMessage.value = err.message || "Fehler beim Laden der Artikel";
   } finally {
     loading.value = false;
-    showToast("Artikel erfolgreich gelöscht.", "success");
   }
 }
 
