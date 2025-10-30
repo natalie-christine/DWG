@@ -4,7 +4,10 @@ import { supabase } from "../lib/supabase";
 import { useRoute, useRouter } from "vue-router";
 import Swal from "sweetalert2";
 import jsPDF from "jspdf";
-import "jspdf-autotable";
+import autoTableMod from "jspdf-autotable";
+const autoTable = autoTableMod.default || autoTableMod; // robust für Vite/ESM
+
+
 
 const route = useRoute();
 const router = useRouter();
@@ -59,49 +62,50 @@ async function generateAngebotsId() {
 
 // PDF erzeugen
 async function generatePDF(angebotId, kunde, positionen, summe) {
-  const doc = new jsPDF();
+  const pdf = new jsPDF(); // nicht "doc" verwenden
 
-  doc.setFontSize(16);
-  doc.text("ANGEBOT", 14, 20);
-  doc.setFontSize(10);
-  doc.text(`Angebotsnummer: ${angebotId}`, 14, 28);
-  doc.text(`Datum: ${new Date().toLocaleDateString("de-DE")}`, 14, 33);
+  pdf.setFontSize(16);
+  pdf.text("ANGEBOT", 14, 20);
+  pdf.setFontSize(10);
+  pdf.text(`Angebotsnummer: ${angebotId}`, 14, 28);
+  pdf.text(`Datum: ${new Date().toLocaleDateString("de-DE")}`, 14, 33);
 
-  doc.setFontSize(11);
-  doc.text("Kunde:", 14, 45);
-  doc.setFontSize(10);
-  doc.text(`${kunde.nummer || ""} - ${kunde.kontaktperson || ""}`, 14, 50);
-  if (kunde.firma) doc.text(kunde.firma, 14, 55);
+  pdf.setFontSize(11);
+  pdf.text("Kunde:", 14, 45);
+  pdf.setFontSize(10);
+  pdf.text(`${kunde.nummer || ""} - ${kunde.kontaktperson || ""}`, 14, 50);
+  if (kunde.firma) pdf.text(kunde.firma, 14, 55);
 
-  const tableData = positionen.map((p) => [
+  const tableData = positionen.map(p => [
     p.name,
     p.menge,
     `${p.einzelpreis.toFixed(2)} €`,
     `${(p.menge * p.einzelpreis).toFixed(2)} €`,
   ]);
-  doc.autoTable({
+
+  autoTable(pdf, {
     startY: 65,
     head: [["Artikel", "Menge", "Einzelpreis", "Gesamt"]],
     body: tableData,
   });
 
-  const sumY = doc.lastAutoTable.finalY + 10;
-  doc.setFontSize(12);
-  doc.text(`Gesamtsumme: ${summe.toFixed(2)} €`, 140, sumY, { align: "right" });
+  const sumY = (pdf.lastAutoTable?.finalY || 65) + 10;
+  pdf.setFontSize(12);
+  pdf.text(`Gesamtsumme: ${summe.toFixed(2)} €`, 140, sumY, { align: "right" });
 
   const text = `
-  Vielen Dank für Ihre Anfrage.
-  Wir freuen uns, Ihnen folgendes Angebot zu unterbreiten.
-  Die Preise verstehen sich netto, zuzüglich gesetzlicher Mehrwertsteuer.
-  Dieses Angebot ist 14 Tage gültig.
+Vielen Dank für Ihre Anfrage.
+Wir freuen uns, Ihnen folgendes Angebot zu unterbreiten.
+Die Preise verstehen sich netto, zuzüglich gesetzlicher Mehrwertsteuer.
+Dieses Angebot ist 14 Tage gültig.
 
-  Mit freundlichen Grüßen
-  Ihr DWG-Team
+Mit freundlichen Grüßen
+Ihr DWG-Team
   `;
-  doc.setFontSize(10);
-  doc.text(text.trim(), 14, sumY + 15);
+  pdf.setFontSize(10);
+  pdf.text(text.trim(), 14, sumY + 15);
 
-  return doc.output("blob");
+  return pdf.output("blob");
 }
 
 // Angebot speichern
