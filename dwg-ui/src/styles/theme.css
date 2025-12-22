@@ -1,0 +1,64 @@
+:root{
+    /* Typography */
+    --font-sans: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    --fs-base: 18px;          /* groß & gut lesbar */
+    --fs-sm: 16px;
+    --fs-lg: 22px;
+    --fs-xl: 28px;
+    --lh: 1.35;
+  
+    /* Layout */
+    --radius: 12px;
+    --radius-sm: 10px;
+    --shadow: 0 6px 18px rgba(0,0,0,.06);
+  
+    /* Colors */
+    --bg: #f6f7fb;
+    --panel: #ffffff;
+    --text: #111827;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+  
+    /* Buttons */
+    --blue: #2563eb;
+    --blue-h: #1d4ed8;
+  
+    --green: #16a34a;
+    --green-h: #15803d;
+  
+    --red: #dc2626;
+    --red-h: #b91c1c;
+  }
+  
+  html, body {
+    font-family: var(--font-sans);
+    font-size: var(--fs-base);
+    line-height: var(--lh);
+    color: var(--text);
+    background: var(--bg);
+  }
+  
+  * { box-sizing: border-box; }
+  
+  h1 { font-size: var(--fs-xl); margin: 0 0 12px; }
+  h2 { font-size: 24px; margin: 0 0 10px; }
+  p  { margin: 0; color: var(--text); }
+  
+  .page {
+    padding: 18px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  }
+  
+  .grid {
+    display: grid;
+    gap: 14px;
+  }
+  
